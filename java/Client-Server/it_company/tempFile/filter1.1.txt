@@ -1,0 +1,204 @@
+import org.json.JSONArray;
+import org.json.JSONObject;
+import com.toedter.calendar.JDateChooser;
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import javax.swing.border.Border;
+import java.util.ArrayList;
+import java.util.List;
+import java.text.SimpleDateFormat;
+
+public class FilterForm extends JFrame {
+
+    private List<JCheckBox> checkBoxes;
+    private List<JComponent> filterComponents;
+    private String tableName;
+
+    public FilterForm(String tableName, String json) {
+        this.tableName = tableName;
+        checkBoxes = new ArrayList<>();
+        filterComponents = new ArrayList<>();
+
+        JSONArray jsonArray = new JSONArray(json);
+
+        setTitle("Filter Form");
+        setSize(600, 300);
+        setLayout(new GridLayout(jsonArray.length() + 1, 2));
+
+        for (int i = 0; i < jsonArray.length(); i++) {
+            JSONObject jsonObject = jsonArray.getJSONObject(i);
+            String columnName = jsonObject.getString("column_name");
+            String dataType = jsonObject.getString("data_type");
+
+            JCheckBox checkBox = new JCheckBox(columnName);
+            checkBoxes.add(checkBox);
+            add(checkBox);
+
+            JComponent filterComponent;
+           if (dataType.contains("int") || dataType.contains("serial")) {
+                JPanel panel = new JPanel(new GridLayout(1, 2));
+                JTextField minValueField = new JTextField();
+                JTextField maxValueField = new JTextField();
+                maxValueField.setPreferredSize(new Dimension(100, 25));
+                panel.add(minValueField);
+                panel.add(maxValueField);
+                filterComponent = panel;
+            } else if (dataType.equals("date") || dataType.equals("timestamp")) {
+                JPanel panel = new JPanel(new GridLayout(1, 2));
+                JDateChooser minDateChooser = new JDateChooser();
+                minDateChooser.setPreferredSize(new Dimension(250, 25));
+                JDateChooser maxDateChooser = new JDateChooser();
+                maxDateChooser.setPreferredSize(new Dimension(250, 25));
+                panel.add(minDateChooser);
+                panel.add(maxDateChooser);
+                filterComponent = panel;
+            } else if (dataType.equals("bool")) {
+                JPanel panel = new JPanel();
+                JRadioButton yesRadioButton = new JRadioButton("Yes");
+                JRadioButton noRadioButton = new JRadioButton("No");
+                yesRadioButton.doClick(); // выбранный по стандарту
+                ButtonGroup buttonGroup = new ButtonGroup();
+                buttonGroup.add(yesRadioButton);
+                buttonGroup.add(noRadioButton);
+                panel.add(yesRadioButton);
+                panel.add(noRadioButton);
+                filterComponent = panel;
+            } else {
+                JTextField textField = new JTextField();
+                filterComponent = textField;
+            }
+            filterComponents.add(filterComponent);
+            add(filterComponent);
+        }
+
+        JButton applyButton = new JButton("Apply");
+        applyButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                String query = generateQuery();
+                JOptionPane.showMessageDialog(null, query);
+            }
+        });
+        add(applyButton);
+
+        JButton exitButton = new JButton("Exit");
+        exitButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                System.exit(0);
+            }
+        });
+        add(exitButton);
+
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setVisible(true);
+    }
+
+     private String generateQuery() {
+        StringBuilder query = new StringBuilder("SELECT * FROM ");
+        query.append(tableName);
+        query.append(" WHERE ");
+
+        for (int i = 0; i < checkBoxes.size(); i++) {
+            if (checkBoxes.get(i).isSelected()) {
+                String columnName = checkBoxes.get(i).getText();
+                JComponent filterComponent = filterComponents.get(i);
+                if (filterComponent instanceof JTextField) {
+                    JTextField textField = (JTextField) filterComponent;
+                    String value = textField.getText();
+                    if (!value.isEmpty()) {
+                        query.append(columnName);
+                        query.append(" = '");
+                        query.append(value);
+                        query.append("' AND ");
+                    }
+                } else if (filterComponent instanceof JPanel) {
+                    JPanel panel = (JPanel) filterComponent;
+                    Component[] components = panel.getComponents();
+                    if (components[0] instanceof JDateChooser && components[1] instanceof JDateChooser) {
+                        JDateChooser minDateChooser = (JDateChooser) components[0];
+                        JDateChooser maxDateChooser = (JDateChooser) components[1];
+                        String minDate = ((JTextField) minDateChooser.getDateEditor().getUiComponent()).getText();
+                        String maxDate = ((JTextField) maxDateChooser.getDateEditor().getUiComponent()).getText();
+                        if (!minDate.isEmpty() && !maxDate.isEmpty()) {
+                            // если левое значение больше правого, то меняем места
+                            // если левое и правое значени одно и тоже, то это не промежуток
+                            if (minDate.compareTo(maxDate) > 0) {
+                                String temp = minDate;
+                                minDate = maxDate;
+                                maxDate = temp;
+                            }
+                            query.append(columnName);
+                            if (minDate.equals(maxDate)) {
+                                query.append(" = '");
+                                query.append(minDate);
+                                query.append("' AND ");
+                            } else {
+                                query.append(" BETWEEN '");
+                                query.append(minDate);
+                                query.append("' AND '");
+                                query.append(maxDate);
+                                query.append("' AND ");
+                            }
+                        }
+                    } else if (components[0] instanceof JRadioButton && components[1] instanceof JRadioButton) {
+                        JRadioButton yesRadioButton = (JRadioButton) components[0];
+                        JRadioButton noRadioButton = (JRadioButton) components[1];
+                        String value;
+                        if (yesRadioButton.isSelected()) {
+                            value = "true";
+                        } else if (noRadioButton.isSelected()) {
+                            value = "false";
+                        } else {
+                            value = "";
+                        }
+                        if (!value.isEmpty()) {
+                            query.append(columnName);
+                            query.append(" = ");
+                            query.append(value);
+                            query.append(" AND ");
+                        }
+                    } else if (components[0] instanceof JTextField && components[1] instanceof JTextField) {
+                        JTextField minValueField = (JTextField) components[0];
+                        JTextField maxValueField = (JTextField) components[1];
+                        String minValue = minValueField.getText();
+                        String maxValue = maxValueField.getText();
+                        if (!minValue.isEmpty() && !maxValue.isEmpty()) {
+                            int min = Integer.parseInt(minValue);
+                            int max = Integer.parseInt(maxValue);
+                            // если левое значение больше правого, то меняем места
+                            // если левое и правое значени одно и тоже, то это не промежуток
+                            if (min > max) {
+                                int temp = min;
+                                min = max;
+                                max = temp;
+                            }
+                            query.append(columnName);
+                            if (min == max) {
+                                query.append(" = ");
+                                query.append(min);
+                                query.append(" AND ");
+                            } else {
+                                query.append(" BETWEEN ");
+                                query.append(min);
+                                query.append(" AND ");
+                                query.append(max);
+                                query.append(" AND ");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (query.toString().endsWith("AND ")) {
+            query.setLength(query.length() - 5); // удаляем последнее "AND "
+        }
+
+        return query.toString();
+    }
+
+}
